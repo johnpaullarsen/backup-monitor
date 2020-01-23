@@ -8,14 +8,7 @@ import argparse
 from datetime import datetime, timezone
 
 
-def main():
-    parser = argparse.ArgumentParser(description='Produce a json \'canary\' file for testing cloud backups')
-    parser.add_argument('storage', metavar='storage_provider', help='Cloud storage provider e.g dropbox')
-    parser.add_argument('remote', metavar='rclone_remote_name', help='The name of the rclone remote e.g dropbox-johnl')
-    parser.add_argument('computer', metavar='computer', help='The name for the computer within the backup system')
-    args = parser.parse_args()
-    canary = Canary(args.storage, args.remote, args.computer)
-    canary.generate()
+
 
 
 class Canary:
@@ -44,6 +37,16 @@ class Canary:
         data['numObjects'] = size_result['count']
         data['totalBytes'] = size_result['bytes']
         print(json.dumps(data, indent=2))
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Produce a json \'canary\' file for testing cloud backups')
+    parser.add_argument('storage', metavar='storage_provider', help='Cloud storage provider e.g dropbox')
+    parser.add_argument('remote', metavar='rclone_remote_name', help='The name of the rclone remote e.g dropbox-johnl')
+    parser.add_argument('computer', metavar='computer', help='The name for the computer within the backup system')
+    args = parser.parse_args()
+    canary = Canary(args.storage, args.remote, args.computer)
+    canary.generate()
 
 
 if __name__ == '__main__':
