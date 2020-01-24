@@ -8,35 +8,47 @@ import argparse
 from datetime import datetime, timezone
 
 
-
-
-
 class Canary:
 
     def __init__(self, storage, remote, computer) -> None:
         super().__init__()
-        self.computer = computer
         self.storage = storage
         self.remote = remote
+        self.computer = computer
+        self.timestamp = None
+        self.user = None
+        self.num_objects = 0
+        self.total_bytes = 0
 
-    def get_remote_size(self, rsync_remote):
+
+class BackupMonitor:
+
+    def __init__(self, storage, rclone_remote, computer) -> None:
+        super().__init__()
+        self.storage = storage
+        self.rclone_remote = rclone_remote
+        self.computer = computer
+        self.user = os.environ['USER']
+
+    def create_canary(self):
+        canary = Canary(self.storage, self.rclone_remote, self.computer)
+        canary.timestamp = datetime.isoformat(datetime.now(timezone.utc))
+        canary.user = self.user
+        canary.num_objects, canary.total_bytes = self.get_remote_size()
+        return canary
+
+    def get_remote_size(self):
         """ Use rclone to find the number of objects stored on the remote and their total size """
-        process = subprocess.Popen(['rclone', 'size', f'{rsync_remote}:', '--json'],
+        process = subprocess.Popen(['rclone', 'size', f'{self.rclone_remote}:', '--json'],
                                    stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE)
         stdout, stderr = process.communicate()
-        return json.loads(stdout)
+        response = json.loads(stdout)
+        return response['count'], response['bytes']
 
-    def generate(self):
-        size_result = self.get_remote_size(self.remote)
-        data = dict()
-        data['timestamp'] = datetime.isoformat(datetime.now(timezone.utc))
-        data['computer'] = self.computer
-        data['storage'] = self.storage
-        data['user'] = os.environ['USER']
-        data['numObjects'] = size_result['count']
-        data['totalBytes'] = size_result['bytes']
-        print(json.dumps(data, indent=2))
+    def monitor(self):
+        canary = self.create_canary()
+        print(json.dumps(canary.__dict__, indent=2))
 
 
 def main():
@@ -45,8 +57,8 @@ def main():
     parser.add_argument('remote', metavar='rclone_remote_name', help='The name of the rclone remote e.g dropbox-johnl')
     parser.add_argument('computer', metavar='computer', help='The name for the computer within the backup system')
     args = parser.parse_args()
-    canary = Canary(args.storage, args.remote, args.computer)
-    canary.generate()
+    backup_monitor = BackupMonitor(args.storage, args.remote, args.computer)
+    backup_monitor.monitor()
 
 
 if __name__ == '__main__':
