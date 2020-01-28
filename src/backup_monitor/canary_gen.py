@@ -4,11 +4,14 @@ import json
 import os
 import subprocess
 import argparse
+import tempfile
 
 from datetime import datetime, timezone
 from copy import deepcopy
 
-BACKUP_MONITOR_HOME = f"{os.environ['HOME']}/backup_monitor"
+# A directory with this name will be created on the remote cloud storage, canary files used for monitoring will be
+# stored under this directory
+BACKUP_REMOTE_BASE = "backup-monitor"
 CANARY_FILENAME = "canary.json"
 
 
@@ -66,6 +69,9 @@ class BackupMonitor:
         self.computer = computer
         self.user = user
 
+    def get_remote_working_path(self):
+        return f"{self.rclone_remote}:/{BACKUP_REMOTE_BASE}/{self.computer}/{self.rclone_remote}"
+
     def create_canary(self):
         canary = Canary()
         canary.storage = self.storage
@@ -76,22 +82,51 @@ class BackupMonitor:
         canary.num_objects, canary.total_bytes = self.get_remote_size()
         return canary
 
-    def generate_canary_file(self):
+    def generate_canary_file(self, tempdir):
+        """
+        Generate a Canary object, and generate a json file from it. Copy the file to the generated directory on the
+        remote cloud storage. The monitored computer will sync this file to its disk, then back it up, then restore
+        it to the restored directory so we can check it.
+        :param tempdir: The tempdir to generate the canary file into befory copying to remote storage
+        :return: The Canary object that was generated
+        """
         canary = self.create_canary()
-        generate_file_path = f"{BACKUP_MONITOR_HOME}/{self.rclone_remote}/generated/{CANARY_FILENAME}"
-        with open(generate_file_path, 'w') as generated_canary_file:
+        os.mkdir(f"{tempdir}/generated")
+        local_temp_file = f"{tempdir}/generated/{CANARY_FILENAME}"
+        remote_generated_path = f"{self.get_remote_working_path()}/generated"
+        with open(local_temp_file, 'w') as generated_canary_file:
             json.dump(canary, generated_canary_file, cls=CanaryEncoder, indent=2)
+            generated_canary_file.flush()
+            # Use rclone to put the generated file up on the remote
+            process = subprocess.Popen(['rclone', 'copy', local_temp_file, remote_generated_path],
+                                       stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE)
+            stdout, stderr = process.communicate()
         return canary
 
-    def load_restored_canary_file(self):
-        restored_file_path = f"{BACKUP_MONITOR_HOME}/{self.rclone_remote}/restored/{CANARY_FILENAME}"
-        with open(restored_file_path, 'r') as restored_canary_file:
+    def load_restored_canary_file(self, tempdir):
+        """
+        The backup restore on the monitored computer should have restored the generated canary file into the
+        restored directory of its local storage. Then it should have been synced back to the restored directory of the
+        remote cloud storage. Copy it to the temp directory from the remote storage and parse it into a Canary object.
+        :param tempdir: The tempdir to put the copy of the restored canary file
+        :return: The Canary object parsed from the restored canary file
+        """
+        local_temp_file = f"{tempdir}/restored/{CANARY_FILENAME}"
+        remote_restored_file = f"{self.get_remote_working_path()}/restored/{CANARY_FILENAME}"
+        # Use rclone to copy the restored canary file back from the remote
+        process = subprocess.Popen(['rclone', 'copy', local_temp_file, remote_restored_file],
+                                   stdout=subprocess.PIPE,
+                                   stderr=subprocess.PIPE)
+        stdout, stderr = process.communicate()
+        with open(local_temp_file, 'r') as restored_canary_file:
             restored_canary = json.load(restored_canary_file, cls=CanaryDecoder)
-            print(restored_canary)
         return restored_canary
 
     def get_remote_size(self):
-        """ Use rclone to find the number of objects stored on the remote and their total size """
+        """
+        Use rclone to find the number of objects stored on the remote and their total size
+        """
         process = subprocess.Popen(['rclone', 'size', f'{self.rclone_remote}:', '--json'],
                                    stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE)
@@ -100,9 +135,11 @@ class BackupMonitor:
         return response['count'], response['bytes']
 
     def monitor(self):
-        generated_canary = self.generate_canary_file()
-        restored_canary = self.load_restored_canary_file()
-        restore_lag = generated_canary.timestamp - restored_canary.timestamp
+        with tempfile.TemporaryDirectory() as temp_dir:
+            generated_canary = self.generate_canary_file(temp_dir)
+            restored_canary = self.load_restored_canary_file(temp_dir)
+            restore_lag = generated_canary.timestamp - restored_canary.timestamp
+            print(f"Restore lag: {restore_lag}")
 
 
 def main():
@@ -117,4 +154,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
