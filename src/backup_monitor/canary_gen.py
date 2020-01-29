@@ -112,14 +112,15 @@ class BackupMonitor:
         :param tempdir: The tempdir to put the copy of the restored canary file
         :return: The Canary object parsed from the restored canary file
         """
-        local_temp_file = f"{tempdir}/restored/{CANARY_FILENAME}"
+        local_temp_restored_dir = f"{tempdir}/restored"
+        local_temp_restored_file = f"{local_temp_restored_dir}/{CANARY_FILENAME}"
         remote_restored_file = f"{self.get_remote_working_path()}/restored/{CANARY_FILENAME}"
         # Use rclone to copy the restored canary file back from the remote
-        process = subprocess.Popen(['rclone', 'copy', remote_restored_file, local_temp_file],
+        process = subprocess.Popen(['rclone', 'copy', remote_restored_file, local_temp_restored_dir],
                                    stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE)
         stdout, stderr = process.communicate()
-        with open(local_temp_file, 'r') as restored_canary_file:
+        with open(local_temp_restored_file, 'r') as restored_canary_file:
             restored_canary = json.load(restored_canary_file, cls=CanaryDecoder)
         return restored_canary
 
