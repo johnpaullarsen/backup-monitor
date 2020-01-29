@@ -5,6 +5,7 @@ import os
 import subprocess
 import argparse
 import tempfile
+import boto3
 
 from datetime import datetime, timezone
 from copy import deepcopy
@@ -13,6 +14,7 @@ from copy import deepcopy
 # stored under this directory
 BACKUP_REMOTE_BASE = "backup-monitor"
 CANARY_FILENAME = "canary.json"
+CLOUDWATCH_NAMESPACE = "CloudberryBackup"
 
 
 class Canary:
@@ -141,6 +143,36 @@ class BackupMonitor:
             restored_canary = self.load_restored_canary_file(temp_dir)
             restore_lag = generated_canary.timestamp - restored_canary.timestamp
             print(f"Restore lag: {restore_lag}")
+            self.put_cloudwatch_metrics(restore_lag.total_seconds())
+
+    def put_cloudwatch_metrics(self, restore_lag_sec):
+        client = boto3.client("cloudwatch")
+        response = client.put_metric_data(
+            Namespace=CLOUDWATCH_NAMESPACE,
+            MetricData=[
+                {
+                    "MetricName": "RestoreLag",
+                    "Dimensions": [
+                        {
+                            "Name": "Computer",
+                            "Value": self.computer,
+                        },
+                        {
+                            "Name": "Storage",
+                            "Value": self.storage,
+                        },
+                        {
+                            "Name": "StorageUser",
+                            "Value": "johnl",
+                        }
+                    ],
+                    "Value": restore_lag_sec,
+                    "Unit": "Seconds"
+                }
+            ]
+        )
+        print(response)
+
 
 
 def main():
