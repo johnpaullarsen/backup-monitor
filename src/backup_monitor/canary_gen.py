@@ -115,7 +115,7 @@ class BackupMonitor:
         local_temp_file = f"{tempdir}/restored/{CANARY_FILENAME}"
         remote_restored_file = f"{self.get_remote_working_path()}/restored/{CANARY_FILENAME}"
         # Use rclone to copy the restored canary file back from the remote
-        process = subprocess.Popen(['rclone', 'copy', local_temp_file, remote_restored_file],
+        process = subprocess.Popen(['rclone', 'copy', remote_restored_file, local_temp_file],
                                    stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE)
         stdout, stderr = process.communicate()
