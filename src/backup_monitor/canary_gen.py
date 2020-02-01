@@ -2,6 +2,7 @@
 
 import json
 import os
+import logging
 import subprocess
 import argparse
 import tempfile
@@ -9,6 +10,8 @@ import boto3
 
 from datetime import datetime, timezone
 from copy import deepcopy
+from logging.handlers import RotatingFileHandler
+
 
 # A directory with this name will be created on the remote cloud storage, canary files used for monitoring will be
 # stored under this directory
@@ -97,12 +100,15 @@ class BackupMonitor:
         local_temp_file = f"{tempdir}/generated/{CANARY_FILENAME}"
         remote_generated_path = f"{self.get_remote_working_path()}/generated"
         with open(local_temp_file, 'w') as generated_canary_file:
+            logging.getLogger().info("Writing canary to %s", local_temp_file)
             json.dump(canary, generated_canary_file, cls=CanaryEncoder, indent=2)
             generated_canary_file.flush()
             # Use rclone to put the generated file up on the remote
+            logging.getLogger().info("rclone copy generated canary %s to %s", local_temp_file, remote_generated_path)
             process = subprocess.Popen(['rclone', 'copy', local_temp_file, remote_generated_path],
                                        stdout=subprocess.PIPE,
                                        stderr=subprocess.PIPE)
+            # TODO better checking of result
             stdout, stderr = process.communicate()
         return canary
 
@@ -118,6 +124,7 @@ class BackupMonitor:
         local_temp_restored_file = f"{local_temp_restored_dir}/{CANARY_FILENAME}"
         remote_restored_file = f"{self.get_remote_working_path()}/restored/{CANARY_FILENAME}"
         # Use rclone to copy the restored canary file back from the remote
+        logging.getLogger().info("rclone copy restored canary %s to %s", remote_restored_file, local_temp_restored_dir)
         process = subprocess.Popen(['rclone', 'copy', remote_restored_file, local_temp_restored_dir],
                                    stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE)
@@ -138,15 +145,20 @@ class BackupMonitor:
         return response['count'], response['bytes']
 
     def monitor(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            generated_canary = self.generate_canary_file(temp_dir)
-            restored_canary = self.load_restored_canary_file(temp_dir)
-            restore_lag = generated_canary.timestamp - restored_canary.timestamp
-            print(f"Restore lag: {restore_lag}")
-            self.put_cloudwatch_metrics(restore_lag.total_seconds())
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                generated_canary = self.generate_canary_file(temp_dir)
+                restored_canary = self.load_restored_canary_file(temp_dir)
+                restore_lag = generated_canary.timestamp - restored_canary.timestamp
+                print(f"Restore lag: {restore_lag}")
+                self.put_cloudwatch_metrics(restore_lag.total_seconds())
+        except Exception as e:
+            logging.getLogger().exception("Failed with exception")
+            raise e
 
     def put_cloudwatch_metrics(self, restore_lag_sec):
         client = boto3.client("cloudwatch")
+        logging.getLogger().info("Putting cloudwatch metric %s %s", "RestoreLag", restore_lag_sec)
         response = client.put_metric_data(
             Namespace=CLOUDWATCH_NAMESPACE,
             MetricData=[
@@ -171,7 +183,23 @@ class BackupMonitor:
                 }
             ]
         )
-        print(response)
+        logging.getLogger().info("Cloudwatch put metric response: %s", response)
+
+
+def create_rotating_log(log_dir):
+    """
+    Creates a rotating log
+    """
+    os.makedirs(log_dir, mode=0o700, exist_ok=True)
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    # add a rotating handler
+    handler = RotatingFileHandler(f"{log_dir}/canary_gen.log", maxBytes=1000000, backupCount=5)
+    formatter = logging.Formatter(fmt='%(asctime)s %(levelname)-8s %(message)s',
+                                  datefmt='%Y-%m-%d %H:%M:%S')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
 
 
 def main():
@@ -190,6 +218,7 @@ def main():
     parser.add_argument('storage', metavar='storage_provider', help='Cloud storage provider e.g dropbox')
     parser.add_argument('user', metavar='storage_user', help='Username of the user on the system being backed up. Will be appended to the storage name to derive rclone remote name e.g: dropbox-johnl')
     args = parser.parse_args()
+    create_rotating_log(f"{os.getenv('HOME')}/backup-monitor/logs")
     backup_monitor = BackupMonitor(args.computer, args.storage, args.user)
     backup_monitor.monitor()
 
