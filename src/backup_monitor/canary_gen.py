@@ -64,23 +64,23 @@ class CanaryDecoder(json.JSONDecoder):
 
 class BackupMonitor:
 
-    def __init__(self, storage, rclone_remote, computer, user) -> None:
+    def __init__(self, computer, storage, user) -> None:
         super().__init__()
-        self.storage = storage
-        self.rclone_remote = rclone_remote
         self.computer = computer
+        self.storage = storage
         self.user = user
+        self.rclone_remote = f'{storage}-{user}'
 
     def get_remote_working_path(self):
         return f"{self.rclone_remote}:/{BACKUP_REMOTE_BASE}/{self.computer}/{self.rclone_remote}"
 
     def create_canary(self):
         canary = Canary()
-        canary.storage = self.storage
-        canary.rclone_remote = self.rclone_remote
         canary.computer = self.computer
-        canary.timestamp = datetime.now(timezone.utc)
+        canary.storage = self.storage
         canary.user = self.user
+        canary.rclone_remote = self.rclone_remote
+        canary.timestamp = datetime.now(timezone.utc)
         canary.num_objects, canary.total_bytes = self.get_remote_size()
         return canary
 
@@ -163,7 +163,7 @@ class BackupMonitor:
                         },
                         {
                             "Name": "StorageUser",
-                            "Value": "johnl",
+                            "Value": self.user,
                         }
                     ],
                     "Value": restore_lag_sec,
@@ -174,14 +174,23 @@ class BackupMonitor:
         print(response)
 
 
-
 def main():
-    parser = argparse.ArgumentParser(description='Produce a json \'canary\' file for testing cloud backups')
-    parser.add_argument('storage', metavar='storage_provider', help='Cloud storage provider e.g dropbox')
-    parser.add_argument('remote', metavar='rclone_remote_name', help='The name of the rclone remote e.g dropbox-johnl')
+    parser = argparse.ArgumentParser(
+        description='''
+            Test the sync, backup and restore of cycle of a cloud storage on a (possibly remote) computer.
+            Creates a canary file on the cloud storage. Expects the computer to sync it down, back it up, restore
+            it to a new location, then sync the restored file up to the cloud. Next time this program is invoked it
+            looks for the restored file and calculates the time between the present and the time the restored file was
+            generated. Puts this value into cloudwatch as a metric named "RestoreLag" so that it can be monitored and
+            potentially raise an alarm if the RestoreLag exceeds a value.
+            Requires rclone to be installed with a configuration named {storage}-{user} for each storage system
+        '''
+    )
     parser.add_argument('computer', metavar='computer', help='The name for the computer within the backup system')
+    parser.add_argument('storage', metavar='storage_provider', help='Cloud storage provider e.g dropbox')
+    parser.add_argument('user', metavar='storage_user', help='Username of the user on the system being backed up. Will be appended to the storage name to derive rclone remote name e.g: dropbox-johnl')
     args = parser.parse_args()
-    backup_monitor = BackupMonitor(args.storage, args.remote, args.computer, os.environ['USER'])
+    backup_monitor = BackupMonitor(args.computer, args.storage, args.user)
     backup_monitor.monitor()
 
 
