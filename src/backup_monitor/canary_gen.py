@@ -100,7 +100,7 @@ class BackupMonitor:
         local_temp_file = f"{tempdir}/generated/{CANARY_FILENAME}"
         remote_generated_path = f"{self.get_remote_working_path()}/generated"
         with open(local_temp_file, 'w') as generated_canary_file:
-            logging.getLogger().info("Writing canary to %s", local_temp_file)
+            logging.getLogger().info("Writing generated canary to %s", local_temp_file)
             json.dump(canary, generated_canary_file, cls=CanaryEncoder, indent=2)
             generated_canary_file.flush()
             # Use rclone to put the generated file up on the remote
@@ -130,6 +130,7 @@ class BackupMonitor:
                                    stderr=subprocess.PIPE)
         stdout, stderr = process.communicate()
         with open(local_temp_restored_file, 'r') as restored_canary_file:
+            logging.getLogger().info("Parsing restored canary from %s", local_temp_restored_file)
             restored_canary = json.load(restored_canary_file, cls=CanaryDecoder)
         return restored_canary
 
