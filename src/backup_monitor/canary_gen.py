@@ -161,7 +161,7 @@ class BackupMonitor:
                 restored_canary = self.load_restored_canary_file(temp_dir)
                 restore_lag = generated_canary.timestamp - restored_canary.timestamp
                 print(f"Restore lag: {restore_lag}")
-                restore_lag = CloudwatchMetric("RestoreLag", restore_lag.total_seconds, "Seconds")
+                restore_lag = CloudwatchMetric("RestoreLag", restore_lag.total_seconds(), "Seconds")
                 file_count = CloudwatchMetric("FileCount", generated_canary.num_objects, "Count")
                 total_bytes = CloudwatchMetric("TotalBytes", generated_canary.total_bytes, "Bytes")
                 self.put_cloudwatch_metrics([restore_lag, file_count, total_bytes])
