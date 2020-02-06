@@ -154,22 +154,11 @@ class BackupMonitor:
         response = json.loads(stdout)
         return response['count'], response['bytes']
 
-    def monitor(self):
-        try:
-            with tempfile.TemporaryDirectory() as temp_dir:
-                generated_canary = self.generate_canary_file(temp_dir)
-                restored_canary = self.load_restored_canary_file(temp_dir)
-                restore_lag = generated_canary.timestamp - restored_canary.timestamp
-                print(f"Restore lag: {restore_lag}")
-                restore_lag = CloudwatchMetric("RestoreLag", restore_lag.total_seconds(), "Seconds")
-                file_count = CloudwatchMetric("FileCount", generated_canary.num_objects, "Count")
-                total_bytes = CloudwatchMetric("TotalBytes", generated_canary.total_bytes, "Bytes")
-                self.put_cloudwatch_metrics([restore_lag, file_count, total_bytes])
-        except Exception as e:
-            logging.getLogger().exception("Failed with exception")
-            raise e
-
     def put_cloudwatch_metrics(self, metrics):
+        """
+        Put a list of CloudwatchMetric objects into cloudwatch using dimensions representing this storage
+        :param metrics: The list of metrics to put into cloudwatch
+        """
         client = boto3.client("cloudwatch")
         for metric in metrics:
             logging.getLogger().info("Putting cloudwatch metric %s %s %s", metric.name, metric.value, metric.unit)
@@ -198,6 +187,21 @@ class BackupMonitor:
                 ]
             )
             logging.getLogger().info("Cloudwatch put metric response: %s", response)
+
+    def monitor(self):
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                generated_canary = self.generate_canary_file(temp_dir)
+                restored_canary = self.load_restored_canary_file(temp_dir)
+                restore_lag = generated_canary.timestamp - restored_canary.timestamp
+                self.put_cloudwatch_metrics([
+                    CloudwatchMetric("RestoreLag", restore_lag.total_seconds(), "Seconds"),
+                    CloudwatchMetric("FileCount", generated_canary.num_objects, "Count"),
+                    CloudwatchMetric("TotalBytes", generated_canary.total_bytes, "Bytes")
+                ])
+        except Exception as e:
+            logging.getLogger().exception("Failed with exception")
+            raise e
 
 
 def create_rotating_log(log_dir):
