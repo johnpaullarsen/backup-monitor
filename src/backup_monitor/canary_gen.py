@@ -65,6 +65,15 @@ class CanaryDecoder(json.JSONDecoder):
         return obj
 
 
+class CloudwatchMetric:
+
+    def __init__(self, name, value, unit) -> None:
+        super().__init__()
+        self.name = name
+        self.value = value
+        self.unit = unit
+
+
 class BackupMonitor:
 
     def __init__(self, computer, storage, user) -> None:
@@ -152,39 +161,43 @@ class BackupMonitor:
                 restored_canary = self.load_restored_canary_file(temp_dir)
                 restore_lag = generated_canary.timestamp - restored_canary.timestamp
                 print(f"Restore lag: {restore_lag}")
-                self.put_cloudwatch_metrics(restore_lag.total_seconds())
+                restore_lag = CloudwatchMetric("RestoreLag", restore_lag.total_seconds, "Seconds")
+                file_count = CloudwatchMetric("FileCount", generated_canary.num_objects, "Count")
+                total_bytes = CloudwatchMetric("TotalBytes", generated_canary.total_bytes, "Bytes")
+                self.put_cloudwatch_metrics([restore_lag, file_count, total_bytes])
         except Exception as e:
             logging.getLogger().exception("Failed with exception")
             raise e
 
-    def put_cloudwatch_metrics(self, restore_lag_sec):
+    def put_cloudwatch_metrics(self, metrics):
         client = boto3.client("cloudwatch")
-        logging.getLogger().info("Putting cloudwatch metric %s %s", "RestoreLag", restore_lag_sec)
-        response = client.put_metric_data(
-            Namespace=CLOUDWATCH_NAMESPACE,
-            MetricData=[
-                {
-                    "MetricName": "RestoreLag",
-                    "Dimensions": [
-                        {
-                            "Name": "Computer",
-                            "Value": self.computer,
-                        },
-                        {
-                            "Name": "Storage",
-                            "Value": self.storage,
-                        },
-                        {
-                            "Name": "StorageUser",
-                            "Value": self.user,
-                        }
-                    ],
-                    "Value": restore_lag_sec,
-                    "Unit": "Seconds"
-                }
-            ]
-        )
-        logging.getLogger().info("Cloudwatch put metric response: %s", response)
+        for metric in metrics:
+            logging.getLogger().info("Putting cloudwatch metric %s %s %s", metric.name, metric.value, metric.unit)
+            response = client.put_metric_data(
+                Namespace=CLOUDWATCH_NAMESPACE,
+                MetricData=[
+                    {
+                        "MetricName": metric.name,
+                        "Dimensions": [
+                            {
+                                "Name": "Computer",
+                                "Value": self.computer,
+                            },
+                            {
+                                "Name": "Storage",
+                                "Value": self.storage,
+                            },
+                            {
+                                "Name": "StorageUser",
+                                "Value": self.user,
+                            }
+                        ],
+                        "Value":  metric.value,
+                        "Unit": metric.unit
+                    }
+                ]
+            )
+            logging.getLogger().info("Cloudwatch put metric response: %s", response)
 
 
 def create_rotating_log(log_dir):
