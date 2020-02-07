@@ -1,0 +1,36 @@
+@startuml
+
+control cron
+control BackupMonitor
+entity Computer
+database OneDrive
+database S3
+entity Cloudwatch
+
+...Begin Cycle...
+cron          -> BackupMonitor  : Run
+activate BackupMonitor
+BackupMonitor -> OneDrive       : Put Generated Canary
+BackupMonitor <- OneDrive       : Get Last Restored Canary
+BackupMonitor -> BackupMonitor  : Calculate Restore Lag
+BackupMonitor -> Cloudwatch     : Put Restore Lag Metric
+deactivate BackupMonitor
+...
+Computer      <- OneDrive       : Sync Generated Canary
+...
+Computer      -> Computer       : Start Backup
+Computer      -> S3             : Backup Generated Canary
+...
+Computer      -> Computer       : Start Canary Restore
+Computer      <- S3             : Restore Generated Canary to Restored
+...
+Computer      -> OneDrive       : Sync Restored Canary
+...Begin Next Cycle...
+cron          -> BackupMonitor  : Run
+activate BackupMonitor
+BackupMonitor -> OneDrive       : Put Generated Canary
+BackupMonitor <- OneDrive       : Get Last Restored Canary
+BackupMonitor -> BackupMonitor  : Calculate Restore Lag
+BackupMonitor -> Cloudwatch     : Put Restore Lag Metric
+deactivate BackupMonitor
+@enduml
