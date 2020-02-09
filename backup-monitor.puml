@@ -29,8 +29,5 @@ Computer      -> OneDrive       : Sync Restored Canary
 cron          -> BackupMonitor  : Run
 activate BackupMonitor
 BackupMonitor -> OneDrive       : Put Generated Canary
-BackupMonitor <- OneDrive       : Get Last Restored Canary
-BackupMonitor -> BackupMonitor  : Calculate Restore Lag
-BackupMonitor -> Cloudwatch     : Put Restore Lag Metric
-deactivate BackupMonitor
+...etc...
 @enduml

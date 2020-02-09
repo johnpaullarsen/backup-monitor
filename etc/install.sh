@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
 
-sudo cp src/backup_monitor/canary_gen.py /usr/bin/canary_gen.py
+sudo cp src/backup_monitor/backup_monitor.py /usr/bin/backup_monitor.py

@@ -213,7 +213,7 @@ def create_rotating_log(log_dir):
     logger.setLevel(logging.INFO)
 
     # add a rotating handler
-    handler = RotatingFileHandler(f"{log_dir}/canary_gen.log", maxBytes=1000000, backupCount=5)
+    handler = RotatingFileHandler(f"{log_dir}/backup_monitor.log", maxBytes=1000000, backupCount=5)
     formatter = logging.Formatter(fmt='%(asctime)s %(levelname)-8s %(message)s',
                                   datefmt='%Y-%m-%d %H:%M:%S')
     handler.setFormatter(formatter)
