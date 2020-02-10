@@ -1,0 +1,17 @@
+[
+  {
+    "computer": "hector",
+    "storage": "onedrive",
+    "user": "johnl"
+  },
+  {
+    "computer": "pablo",
+    "storage": "onedrive",
+    "user": "johnl"
+  },
+  {
+    "computer": "pablo",
+    "storage": "dropbox",
+    "user": "johnl"
+  }
+]

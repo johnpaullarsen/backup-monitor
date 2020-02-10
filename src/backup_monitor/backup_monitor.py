@@ -4,7 +4,6 @@ import json
 import os
 import logging
 import subprocess
-import argparse
 import tempfile
 import boto3
 
@@ -12,10 +11,21 @@ from datetime import datetime, timezone
 from copy import deepcopy
 from logging.handlers import RotatingFileHandler
 
+'''
+    Test the sync, backup and restore of cycle of a cloud storage on a (possibly remote) computer.
+    Creates a canary file on the cloud storage. Expects the computer to sync it down, back it up, restore
+    it to a new location, then sync the restored file up to the cloud. Next time this program is invoked it
+    looks for the restored file and calculates the time between the present and the time the restored file was
+    generated. Puts this value into cloudwatch as a metric named "RestoreLag" so that it can be monitored and
+    potentially raise an alarm if the RestoreLag exceeds a value.
+    Requires rclone to be installed with a configuration named {storage}-{user} for each storage system
+'''
+
 
 # A directory with this name will be created on the remote cloud storage, canary files used for monitoring will be
 # stored under this directory
 BACKUP_REMOTE_BASE = "backup-monitor"
+
 CANARY_FILENAME = "canary.json"
 CLOUDWATCH_NAMESPACE = "CloudberryBackup"
 
@@ -189,22 +199,18 @@ class BackupMonitor:
             logging.getLogger().info("Cloudwatch put metric response: %s", response)
 
     def monitor(self):
-        try:
-            with tempfile.TemporaryDirectory() as temp_dir:
-                generated_canary = self.generate_canary_file(temp_dir)
-                restored_canary = self.load_restored_canary_file(temp_dir)
-                restore_lag = generated_canary.timestamp - restored_canary.timestamp
-                self.put_cloudwatch_metrics([
-                    CloudwatchMetric("RestoreLag", restore_lag.total_seconds(), "Seconds"),
-                    CloudwatchMetric("FileCount", generated_canary.num_objects, "Count"),
-                    CloudwatchMetric("TotalBytes", generated_canary.total_bytes, "Bytes")
-                ])
-        except Exception as e:
-            logging.getLogger().exception("Failed with exception")
-            raise e
+        with tempfile.TemporaryDirectory() as temp_dir:
+            generated_canary = self.generate_canary_file(temp_dir)
+            restored_canary = self.load_restored_canary_file(temp_dir)
+            restore_lag = generated_canary.timestamp - restored_canary.timestamp
+            self.put_cloudwatch_metrics([
+                CloudwatchMetric("RestoreLag", restore_lag.total_seconds(), "Seconds"),
+                CloudwatchMetric("FileCount", generated_canary.num_objects, "Count"),
+                CloudwatchMetric("TotalBytes", generated_canary.total_bytes, "Bytes")
+            ])
 
 
-def create_rotating_log(log_dir):
+def create_rotating_log(log_dir, log_file_name):
     """
     Creates a rotating log
     """
@@ -213,32 +219,33 @@ def create_rotating_log(log_dir):
     logger.setLevel(logging.INFO)
 
     # add a rotating handler
-    handler = RotatingFileHandler(f"{log_dir}/backup_monitor.log", maxBytes=1000000, backupCount=5)
+    handler = RotatingFileHandler(f"{log_dir}/{log_file_name}", maxBytes=1000000, backupCount=5)
     formatter = logging.Formatter(fmt='%(asctime)s %(levelname)-8s %(message)s',
                                   datefmt='%Y-%m-%d %H:%M:%S')
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
 
+def monitor(config_file_path):
+    try:
+        with open(config_file_path, 'r') as config_file:
+            configs = json.load(config_file)
+            for config in configs:
+                backup_monitor = BackupMonitor(config['computer'], config['storage'], config['user'])
+                backup_monitor.monitor()
+
+    except Exception as e:
+        logging.getLogger().exception("Failed with exception")
+        raise e
+
+
 def main():
-    parser = argparse.ArgumentParser(
-        description='''
-            Test the sync, backup and restore of cycle of a cloud storage on a (possibly remote) computer.
-            Creates a canary file on the cloud storage. Expects the computer to sync it down, back it up, restore
-            it to a new location, then sync the restored file up to the cloud. Next time this program is invoked it
-            looks for the restored file and calculates the time between the present and the time the restored file was
-            generated. Puts this value into cloudwatch as a metric named "RestoreLag" so that it can be monitored and
-            potentially raise an alarm if the RestoreLag exceeds a value.
-            Requires rclone to be installed with a configuration named {storage}-{user} for each storage system
-        '''
-    )
-    parser.add_argument('computer', metavar='computer', help='The name for the computer within the backup system')
-    parser.add_argument('storage', metavar='storage_provider', help='Cloud storage provider e.g dropbox')
-    parser.add_argument('user', metavar='storage_user', help='Username of the user on the system being backed up. Will be appended to the storage name to derive rclone remote name e.g: dropbox-johnl')
-    args = parser.parse_args()
-    create_rotating_log(f"{os.getenv('HOME')}/backup-monitor/logs")
-    backup_monitor = BackupMonitor(args.computer, args.storage, args.user)
-    backup_monitor.monitor()
+    home = os.getenv('HOME')
+    backup_monitor_home = os.getenv('BACKUP_MONITOR_HOME', f"{home}/backup_monitor")
+    log_dir = f"{backup_monitor_home}/logs"
+    conf_file = f"{backup_monitor_home}/conf/backup_monitor.json"
+    create_rotating_log(log_dir, "backup_monitor.log")
+    monitor(conf_file)
 
 
 if __name__ == '__main__':
