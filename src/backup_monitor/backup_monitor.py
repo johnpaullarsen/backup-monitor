@@ -171,7 +171,13 @@ class BackupMonitor:
         """
         client = boto3.client("cloudwatch")
         for metric in metrics:
-            logging.getLogger().info("Putting cloudwatch metric %s %s %s", metric.name, metric.value, metric.unit)
+            logging.getLogger().info("Putting cloudwatch metric %s %s %s %s %s %s",
+                                     self.computer,
+                                     self.storage,
+                                     self.user,
+                                     metric.name,
+                                     metric.value,
+                                     metric.unit)
             response = client.put_metric_data(
                 Namespace=CLOUDWATCH_NAMESPACE,
                 MetricData=[
@@ -199,6 +205,7 @@ class BackupMonitor:
             logging.getLogger().debug("Cloudwatch put metric response: %s", response)
 
     def monitor(self):
+        logging.getLogger().info("Monitoring %s %s %s", self.computer, self.storage, self.user)
         with tempfile.TemporaryDirectory() as temp_dir:
             generated_canary = self.generate_canary_file(temp_dir)
             restored_canary = self.load_restored_canary_file(temp_dir)
