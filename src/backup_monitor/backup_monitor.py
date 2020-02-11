@@ -196,7 +196,7 @@ class BackupMonitor:
                     }
                 ]
             )
-            logging.getLogger().info("Cloudwatch put metric response: %s", response)
+            logging.getLogger().debug("Cloudwatch put metric response: %s", response)
 
     def monitor(self):
         with tempfile.TemporaryDirectory() as temp_dir:
